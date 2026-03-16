@@ -168,12 +168,20 @@ class AmazonScraper:
 
         try:
             self.session.get("https://myvipon.com/", headers=self.headers)
-        except requests.exceptions.ChunkedEncodingError:
+        except Exception:
             self.rotate_accounts()
 
         return True
 
-    def handle_first_request(self, idd):
+    def _is_cloudflare_block(self, text):
+        markers = ["Cloudflare to restrict access", "Just a moment", "cf-error-details", "Checking your browser"]
+        return any(m in text for m in markers)
+
+    def handle_first_request(self, idd, _retries=0):
+        if _retries >= 3:
+            print(f"[CodeFetch] Max retries reached for {idd}")
+            return "rate_limited"
+
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
@@ -192,6 +200,10 @@ class AmazonScraper:
             f"https://www.myvipon.com/code/get-code?id={idd}&f=fd_web_detail&position=0&event_type=search&sl=c2ba4bd9970d893c625be5ffe811da00",
             headers=headers)
 
+        if self._is_cloudflare_block(first_check.text):
+            print(f"[CodeFetch] Cloudflare blocked request for {idd} (HTTP {first_check.status_code})")
+            return "rate_limited"
+
         if any(x in first_check.text for x in self.SUCCESSFUL):
             print("Success")
             return self.return_codes(first_check.text)
@@ -202,12 +214,15 @@ class AmazonScraper:
                 return self.handle_captcha(idd)
 
             elif "Invalid Request" in first_check.text:
-                print("Invalid Request, retrying...")
-                return self.handle_first_request(idd)
+                print(f"Invalid Request, retrying ({_retries + 1}/3)...")
+                time.sleep(2)
+                return self.handle_first_request(idd, _retries=_retries + 1)
 
             elif "Not more than 30 vouchers within 24 hours" in first_check.text:
                 self.rotate_accounts()
-                return self.handle_first_request(idd)
+                if self.current is None:
+                    return "rate_limited"
+                return self.handle_first_request(idd, _retries=_retries + 1)
 
             elif "Oops, Instant vouchers have run out.." in first_check.text:
                 return ["This deal has ran out of vouchers"]
@@ -215,15 +230,7 @@ class AmazonScraper:
             else:
                 pass
 
-        print("Failed, saved to file")
-        print(f"https://www.myvipon.com/code/get-code?id={idd}&f=fd_web_detail&position=0&event_type=search&sl=c2ba4bd9970d893c625be5ffe811da00")
-        #print(first_check.text)
-        print(headers)
-        print(self.session.proxies)
-        print(self.session.headers)
-        print(self.session.cookies.get_dict())
-        
-        open("failed", "wb").write(first_check.content)
+        print(f"[CodeFetch] Unknown response for {idd} (HTTP {first_check.status_code})")
         return ["Something went wrong"]
 
     def handle_captcha(self, idd):
