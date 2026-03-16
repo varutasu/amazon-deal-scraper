@@ -1,3 +1,4 @@
+import base64
 import os
 import json
 import asyncio
@@ -28,7 +29,15 @@ class WebhookNotifier:
         self._load_routes()
 
     def _load_routes(self):
-        raw = os.environ.get("DEAL_WEBHOOKS", "")
+        raw_b64 = os.environ.get("DEAL_WEBHOOKS_B64", "")
+        if raw_b64:
+            try:
+                raw = base64.b64decode(raw_b64).decode("utf-8")
+            except Exception as e:
+                print(f"[WebhookNotifier] Failed to decode DEAL_WEBHOOKS_B64: {e}")
+                return
+        else:
+            raw = os.environ.get("DEAL_WEBHOOKS", "")
         if not raw:
             return
         try:
