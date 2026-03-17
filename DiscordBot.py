@@ -19,6 +19,7 @@ NOTIFICATION_INTERVAL = float(os.environ.get("NOTIFICATION_INTERVAL", "21600"))
 DEAL_SCAN_INTERVAL = float(os.environ.get("DEAL_SCAN_INTERVAL", "1800"))
 DEAL_SCAN_MAX_PAGES = int(os.environ.get("DEAL_SCAN_MAX_PAGES", "10"))
 CODE_FETCH_INTERVAL = float(os.environ.get("CODE_FETCH_INTERVAL", "30"))
+CODE_FETCH_PROXY = os.environ.get("CODE_FETCH_PROXY", "").strip() or None
 
 async def mandatory_check(ctx):
     allowed = await Notification.get_whitelist(True)
@@ -51,7 +52,7 @@ async def regularly_check():
 
 init = True
 
-scraper = AmazonScraper(Constants.TESSERACT_LOCATION, proxy=Constants.PROXY)
+scraper = AmazonScraper(Constants.TESSERACT_LOCATION, proxy=Constants.PROXY, code_fetch_proxy=CODE_FETCH_PROXY)
 Notification = DatabaseHandler()
 deal_router = None
 

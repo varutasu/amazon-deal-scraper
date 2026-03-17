@@ -9,7 +9,7 @@ import time
 from curl_cffi import requests as curl_requests
 
 class AmazonScraper:
-    def __init__(self, path=None, proxy=False):
+    def __init__(self, path=None, proxy=False, code_fetch_proxy=None):
         if path is not None:
             pytesseract.pytesseract.tesseract_cmd = path
 
@@ -18,6 +18,11 @@ class AmazonScraper:
         self.session = curl_requests.Session(impersonate="chrome")
         if proxy:
             self.session.proxies = {"https": proxy, "http": proxy}
+
+        self.code_fetch_proxies = None
+        if code_fetch_proxy:
+            self.code_fetch_proxies = {"https": code_fetch_proxy, "http": code_fetch_proxy}
+            print(f"[AmazonScraper] Code-fetch proxy: {code_fetch_proxy}")
 
         self.webhook = ""
         self.debug = False
@@ -185,11 +190,10 @@ class AmazonScraper:
         url = f"https://www.myvipon.com/code/get-code?id={idd}&f=fd_web_detail&position=0&event_type=search&sl=c2ba4bd9970d893c625be5ffe811da00"
 
         try:
-            first_check = curl_requests.get(
-                url,
-                cookies=self.current,
-                impersonate="chrome",
-            )
+            kwargs = dict(cookies=self.current, impersonate="chrome")
+            if self.code_fetch_proxies:
+                kwargs["proxies"] = self.code_fetch_proxies
+            first_check = curl_requests.get(url, **kwargs)
         except Exception as e:
             print(f"[CodeFetch] Request exception for {idd}: {e}")
             return "rate_limited"
@@ -305,10 +309,17 @@ class AmazonScraper:
         return ["Something went wrong"]
 
     def get_code(self, idd):
-        if self.current == None:
+        if self.current is None:
             print("No accounts loaded")
             return ["No accounts loaded"]
 
+        if self.code_fetch_proxies:
+            saved = getattr(self.session, "proxies", None)
+            self.session.proxies = self.code_fetch_proxies
+            try:
+                return self.handle_first_request(idd)
+            finally:
+                self.session.proxies = saved or {}
         return self.handle_first_request(idd)
 
     def check_for_captcha(self, data):
