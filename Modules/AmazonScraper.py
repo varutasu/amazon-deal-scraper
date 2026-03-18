@@ -226,7 +226,8 @@ class AmazonScraper:
             elif "Oops, Instant vouchers have run out.." in first_check.text:
                 return "out_of_vouchers"
 
-        print(f"[CodeFetch] Unknown response for {idd} (HTTP {first_check.status_code})")
+        body_preview = first_check.text[:300].replace("\n", " ")
+        print(f"[CodeFetch] Unknown response for {idd} (HTTP {first_check.status_code}): {body_preview}")
         return "failed"
 
     def handle_captcha(self, idd):
