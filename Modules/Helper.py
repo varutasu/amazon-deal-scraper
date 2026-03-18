@@ -3,6 +3,9 @@ import os
 from Variables import Constants
 import discord
 
+import re
+from datetime import datetime, timezone
+
 _ASSOCIATE_TAG = os.environ.get("AMAZON_ASSOCIATE_TAG", "")
 
 
@@ -181,3 +184,56 @@ def combine_two_dicts(dict1, dict2):
     for key in dict2:
         combined_dict[key + offset] = dict2[key]
     return combined_dict
+
+
+def _parse_discount_pct(raw):
+    digits = re.sub(r"[^\d]", "", str(raw))
+    return int(digits) if digits else 0
+
+
+def _parse_price(raw):
+    cleaned = re.sub(r"[^\d.]", "", str(raw))
+    try:
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _slugify(title, source_id):
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:80]
+    return f"{slug}-{source_id}"
+
+
+def normalize_myvipon_deal(listing):
+    """Convert a parsed MyVipon listing into the normalized deal schema."""
+    source_id = str(listing.get("id", ""))
+    title = listing.get("title", "Unknown Product")
+    amz_url = affiliate_link(listing.get("amz_link", ""))
+
+    return {
+        "source": "myvipon",
+        "source_id": source_id,
+        "asin": _extract_asin(amz_url),
+        "title": title,
+        "url": amz_url,
+        "image": listing.get("img_src", ""),
+        "price_current": _parse_price(listing.get("discounted_price")),
+        "price_original": _parse_price(listing.get("regular_price")),
+        "discount_pct": _parse_discount_pct(listing.get("discount", "0")),
+        "coupon_code": listing.get("coupon_code"),
+        "coupon_type": "promo_code" if listing.get("coupon_code") else "pending",
+        "deal_type": "coupon",
+        "category": listing.get("category", ""),
+        "rating": float(listing.get("review", 0) or 0),
+        "review_count": int(listing.get("review_count", 0) or 0),
+        "fulfillment": listing.get("fulfillment", ""),
+        "shipping": listing.get("shipping", ""),
+        "slug": _slugify(title, source_id),
+        "active": True,
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+
+def _extract_asin(url):
+    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", url or "")
+    return match.group(1) if match else None

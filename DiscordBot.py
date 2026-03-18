@@ -167,6 +167,9 @@ async def Deal_Routine():
                 if not matching:
                     continue
 
+                normalized = Helper.normalize_myvipon_deal(listing)
+                await Notification.upsert_deal(normalized)
+
                 posted_messages = await deal_router.post_deal_to_routes(listing, code_status="pending")
                 if posted_messages:
                     await Notification.mark_deal_posted(deal_id)
@@ -220,8 +223,10 @@ async def Code_Fetch_Routine():
 
     if is_valid_code:
         print(f"[CodeFetch] Got code for {deal_id}: {code[:20]}...")
+        await Notification.update_deal_code("myvipon", deal_id, code)
     else:
         print(f"[CodeFetch] No code for {deal_id}: {code}")
+        await Notification.update_deal_code("myvipon", deal_id, None)
 
     edited = 0
     for msg_info in messages:

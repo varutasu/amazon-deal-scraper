@@ -24,6 +24,7 @@ class DatabaseHandler:
         self.deal_posted = self.db['deal-posted']
         self.deal_routes = self.db['deal-routes']
         self.code_queue = self.db['code-queue']
+        self.deals = self.db['deals']
 
     # --- Deal dedup ---
 
@@ -119,6 +120,43 @@ class DatabaseHandler:
     async def clear_code_queue(self):
         await self.code_queue.delete_many({})
 
+    # --- Normalized deals (shared with website) ---
+
+    async def upsert_deal(self, deal):
+        """Insert or update a normalized deal document. Deduplicates by source + source_id."""
+        await self.deals.update_one(
+            {"source": deal["source"], "source_id": deal["source_id"]},
+            {"$set": deal, "$setOnInsert": {"first_seen": datetime.now(timezone.utc)}},
+            upsert=True,
+        )
+
+    async def update_deal_code(self, source, source_id, code):
+        """Update the coupon_code for a deal after background code fetching."""
+        update = {"coupon_code": code} if code else {"coupon_code": None, "coupon_type": "none"}
+        await self.deals.update_one(
+            {"source": source, "source_id": str(source_id)},
+            {"$set": update},
+        )
+
+    async def get_active_deals(self, limit=50, skip=0, category=None, min_discount=0, source=None):
+        """Query active deals for the website API."""
+        query = {"active": True}
+        if category:
+            query["category"] = category
+        if min_discount:
+            query["discount_pct"] = {"$gte": min_discount}
+        if source:
+            query["source"] = source
+        cursor = self.deals.find(query).sort("first_seen", -1).skip(skip).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    async def get_deal_by_slug(self, slug):
+        return await self.deals.find_one({"slug": slug, "active": True})
+
+    async def get_deal_categories(self):
+        """Return distinct category values for filtering."""
+        return await self.deals.distinct("category", {"active": True})
+
     async def ensure_indexes(self):
         await self.deal_posted.create_index("deal_id", unique=True)
         await self.deal_posted.create_index("posted_at", expireAfterSeconds=604800)
@@ -126,6 +164,11 @@ class DatabaseHandler:
             [("guild_id", 1), ("channel_id", 1)], unique=True,
         )
         await self.code_queue.create_index("queued_at", expireAfterSeconds=7200)
+        await self.deals.create_index([("source", 1), ("source_id", 1)], unique=True)
+        await self.deals.create_index([("active", 1), ("first_seen", -1)])
+        await self.deals.create_index([("active", 1), ("discount_pct", -1)])
+        await self.deals.create_index("slug", unique=True, sparse=True)
+        await self.deals.create_index("first_seen", expireAfterSeconds=2592000)
 
     # --- User management ---
 
