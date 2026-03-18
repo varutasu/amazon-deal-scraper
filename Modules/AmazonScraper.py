@@ -211,6 +211,9 @@ class AmazonScraper:
                 if self.current is None:
                     return "rate_limited"
                 return self.handle_first_request(idd, _retries=_retries + 1)
+            if "trying too often" in msg.lower():
+                print(f"[CodeFetch] MyVipon rate limit for {idd}: trying too often")
+                return "rate_limited"
             if "60 codes every day" in msg or "claim up to" in msg:
                 print(f"[CodeFetch] Daily limit (60) hit, rotating account")
                 self.limit.append((self.current, time.time()))

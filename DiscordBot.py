@@ -18,7 +18,7 @@ from Components.RemoveFilterDropdown.View import NotificationRemoveView
 NOTIFICATION_INTERVAL = float(os.environ.get("NOTIFICATION_INTERVAL", "21600"))
 DEAL_SCAN_INTERVAL = float(os.environ.get("DEAL_SCAN_INTERVAL", "1800"))
 DEAL_SCAN_MAX_PAGES = int(os.environ.get("DEAL_SCAN_MAX_PAGES", "10"))
-CODE_FETCH_INTERVAL = float(os.environ.get("CODE_FETCH_INTERVAL", "30"))
+CODE_FETCH_INTERVAL = float(os.environ.get("CODE_FETCH_INTERVAL", "90"))
 CODE_FETCH_PROXY = os.environ.get("CODE_FETCH_PROXY", "").strip() or None
 
 async def mandatory_check(ctx):
@@ -206,9 +206,9 @@ async def Code_Fetch_Routine():
         code = "failed"
 
     if code == "rate_limited":
-        print(f"[CodeFetch] Rate-limited on {deal_id} — requeueing and backing off")
+        print(f"[CodeFetch] Rate-limited on {deal_id} — requeueing and backing off 180s")
         await Notification.requeue_code_fetch(item)
-        await asyncio.sleep(60)
+        await asyncio.sleep(180)
         return
 
     is_valid_code = (
