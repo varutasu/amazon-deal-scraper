@@ -59,17 +59,36 @@ deal_router = None
 categories = list(scraper.categories.keys())
 categories.append("all")
 
-try:
-    with open("data/cookies.txt", "r") as f:
-        accounts = f.read().strip().split("\n")
-    for account in accounts:
-        if account.strip():
-            scraper.load_account(json.loads(account))
-    scraper.rotate_accounts()
-except FileNotFoundError:
-    print("[Startup] WARNING: data/cookies.txt not found — coupon fetching disabled")
-except json.JSONDecodeError as e:
-    print(f"[Startup] ERROR: Failed to parse cookies.txt: {e}")
+COOKIE_RELOAD_INTERVAL = float(os.environ.get("COOKIE_RELOAD_INTERVAL", "21600"))  # 6 hours
+
+
+async def load_cookies_from_mongo():
+    """Load active MyVipon account cookies from MongoDB."""
+    try:
+        cookie_list = await Notification.get_active_account_cookies()
+        if not cookie_list:
+            print("[Cookies] No active accounts in MongoDB — trying cookies.txt fallback")
+            try:
+                with open("data/cookies.txt", "r") as f:
+                    accounts = f.read().strip().split("\n")
+                for account in accounts:
+                    if account.strip():
+                        scraper.load_account(json.loads(account))
+                scraper.rotate_accounts()
+                print(f"[Cookies] Loaded {len(scraper.accounts)} account(s) from cookies.txt")
+            except (FileNotFoundError, json.JSONDecodeError):
+                print("[Cookies] No cookies.txt found either — coupon fetching disabled")
+            return
+
+        scraper.accounts = []
+        scraper.current = None
+        for cookies in cookie_list:
+            scraper.load_account(cookies)
+        scraper.rotate_accounts()
+        print(f"[Cookies] Loaded {len(cookie_list)} account(s) from MongoDB")
+    except Exception as e:
+        print(f"[Cookies] Error loading from MongoDB: {e}")
+        traceback.print_exc()
 
 intents = discord.Intents.all()
 bot = discord.Bot(intents=intents)
@@ -111,12 +130,15 @@ async def on_ready():
     print(f'We have logged in as {bot.user}')
 
     await Notification.ensure_indexes()
+    await load_cookies_from_mongo()
 
     Notification_Routine.start()
     Deal_Routine.start()
     Code_Fetch_Routine.start()
+    Cookie_Reload_Routine.start()
     print(f"[DealRouter] Scan routine started (interval={int(DEAL_SCAN_INTERVAL)}s, max_pages={DEAL_SCAN_MAX_PAGES})")
     print(f"[CodeFetch] Background routine started (interval={int(CODE_FETCH_INTERVAL)}s)")
+    print(f"[Cookies] Reload routine started (interval={int(COOKIE_RELOAD_INTERVAL)}s)")
 
     if not Constants.OVERRIDE_BLACKLIST:
         await regularly_check.start()
@@ -240,6 +262,19 @@ async def Code_Fetch_Routine():
 
     if edited:
         print(f"[CodeFetch] Edited {edited} message(s) for deal {deal_id}")
+
+
+# ─── Cookie Reload Routine ─────────────────────────────────────────
+
+@tasks.loop(seconds=COOKIE_RELOAD_INTERVAL)
+async def Cookie_Reload_Routine():
+    """Periodically reload MyVipon cookies from MongoDB (refreshed by syndication service)."""
+    await load_cookies_from_mongo()
+
+
+@Cookie_Reload_Routine.before_loop
+async def before_cookie_reload():
+    await bot.wait_until_ready()
 
 
 # ─── DM Notification Routine ───────────────────────────────────────

@@ -25,6 +25,7 @@ class DatabaseHandler:
         self.deal_routes = self.db['deal-routes']
         self.code_queue = self.db['code-queue']
         self.deals = self.db['deals']
+        self.myvipon_accounts = self.db['myvipon_accounts']
 
     # --- Deal dedup ---
 
@@ -169,6 +170,17 @@ class DatabaseHandler:
         await self.deals.create_index([("active", 1), ("discount_pct", -1)])
         await self.deals.create_index("slug", unique=True, sparse=True)
         await self.deals.create_index("first_seen", expireAfterSeconds=2592000)
+        await self.myvipon_accounts.create_index("email", unique=True)
+
+    # --- MyVipon account cookies ---
+
+    async def get_active_account_cookies(self):
+        """Return list of cookie dicts for all active MyVipon accounts."""
+        cursor = self.myvipon_accounts.find(
+            {"status": "active", "cookies": {"$ne": {}}}
+        )
+        accounts = await cursor.to_list(length=100)
+        return [acc["cookies"] for acc in accounts]
 
     # --- User management ---
 
